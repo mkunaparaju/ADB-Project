@@ -41,7 +41,7 @@ public class TransactionManager {
 	 */
 	public void begin(int timeStamp, String transactionID)
 	{
-		System.out.println("BEGIN : timestamp = " + timeStamp + ", transaction = " + transactionID);
+	//	System.out.println("BEGIN : timestamp = " + timeStamp + ", transaction = " + transactionID);
 		Transaction newTransaction = new Transaction(transactionID, timeStamp, false);
         transMap.put(transactionID, newTransaction);
 		
@@ -52,7 +52,7 @@ public class TransactionManager {
 	 */
 	public void beginro(int timeStamp, String transactionID)
 	{
-		System.out.println("BEGIN : timestamp = " + timeStamp + ", transaction = " + transactionID);
+		//System.out.println("BEGIN : timestamp = " + timeStamp + ", transaction = " + transactionID);
 		Transaction newTransaction = new Transaction(transactionID, timeStamp, true);
 		newTransaction.setPresentStateRO(presentProgState());
         transMap.put(transactionID, newTransaction);

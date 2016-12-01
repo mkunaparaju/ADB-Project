@@ -38,7 +38,7 @@ class InitExec {
 	        TransactionManager tm = new TransactionManager();
             
 	        while (nextLine != null) {
-                 System.out.println(nextLine);
+                // System.out.println(nextLine);
             
                  if (nextLine.startsWith("//") || nextLine.isEmpty()) {
                     nextLine = br.readLine();
