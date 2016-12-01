@@ -365,21 +365,64 @@ public class TransactionManager {
         }
     }
 
-	public void dump()
-	{
-		
-	}
-	public void dump(String index)
-	{
-		
-	}
-	public void dump(int siteID)
-	{
-		
-	}
-	
-	
-	
+    /**
+     * gives the committed values of all copies of all variables at all sites,
+     * sorted per site.
+     */
+    public void dump() 
+    {
+        System.out.println("DUMP ALL:");
+        for (int i = 1; i <= 10; i++) 
+        {
+            dump(i);
+        }
+    }
+
+    /**
+     * gives the committed values of all copies of all variables at site siteNUm
+     * 
+     * @param siteNum - identifier of the site that we are dumping from
+     * 
+     */
+    public void dump(int siteNum) {
+        System.out.println("DUMP : siteNum = " + siteNum);
+        ServerStatus status = dm.getSiteList().get(siteNum - 1).getStatus();
+
+        if (status == ServerStatus.UP || status == ServerStatus.RECOVERING) {
+            System.out.println(dm.getSiteList().get(siteNum - 1).getIndexes());
+        } 
+        else if (status == ServerStatus.DOWN) 
+        {
+            System.out.println("Site "+ dm.getSiteList().get(siteNum - 1).getId()+ ": Down");
+        }
+    }
+
+    /**
+     * gives the committed values of all copies of variable var at all sites.
+     * 
+     * @param index
+     *            - the index that we are dumping from all sites 
+     */
+    public void dump(String index) {
+        int indexID = Integer.parseInt(index.substring(1));
+
+        for (Site s : dm.getSiteList()) {
+            ServerStatus status = s.getStatus();
+
+            if (status == ServerStatus.UP || status == ServerStatus.RECOVERING) 
+            {
+                String val = s.getindexString(indexID);
+                if (!val.equalsIgnoreCase("ignore")) 
+                {
+                    System.out.println("SITE " + s.getId() + " : " + s.getindexString(indexID));
+                }
+            } 
+            else if (status == ServerStatus.DOWN) 
+            {
+            	System.out.println("Server is Down!");
+            }
+        }
+    }
 	
 	public DataManager getDM()
 	{
