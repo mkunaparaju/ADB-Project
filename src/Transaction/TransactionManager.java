@@ -4,8 +4,13 @@
 package Transaction;
 import java.util.*;
 
+import Storage.AccessedSites;
 import Storage.DataManager;
+import Storage.Lock;
+import Storage.Site;
 import Storage.Site.*;
+import Transaction.Transaction.Status;
+import Transaction.WaitOperation.OPERATION;
 
 /**
  * @author mkunaparaju
@@ -17,12 +22,14 @@ public class TransactionManager {
      public static final int totalIndexes = 20;
 
 	DataManager dm;
-	int count;
+	int currentTime;
 	Map<String, Transaction> transMap;
+	private List<WaitOperation> waitingOperations;
 	public TransactionManager() {
 		dm = new DataManager();
-		count =1;
+		currentTime =1;
 		transMap = new HashMap<String, Transaction>();
+		waitingOperations = new ArrayList<WaitOperation>();
 	}
 	
 	
@@ -51,17 +58,312 @@ public class TransactionManager {
         transMap.put(transactionID, newTransaction);
 		
 	}
-	public void end(int timeStamp, String operInput)
+	/**
+     * transaction ends, checks whether it can commit or not
+     * 
+     * @param timeStamp - the timestamp of the ending of the Transaction
+     * @param transaction  - The transaction that is ending
+     */
+    public void end(int timeStamp, String transactionID) {
+
+        Transaction transaction = transMap.get(transactionID);
+        if (transaction == null) 
+        {
+            System.out.println("Incorrect transaction name " + "or transaction has already ended");
+            return;
+        }
+
+        if (transaction.getTransactionStatus() == Status.ABORTED) 
+        {
+            System.out.println("Transaction " + transactionID + " already aborted");
+            return;
+        }
+
+        Set<AccessedSites> setOfSitesAccessed = transaction.getSitesAccessed();
+
+        if (!transaction.getIsReadOnly()) 
+        {
+            int transactionTimestamp = transaction.getTimeStamp();
+            for (AccessedSites s : setOfSitesAccessed) 
+            {
+                if (s.getTimeOfAccess() <= s.getSiteAccessed().getPreviousFailtime() || s.getSiteAccessed().getStatus().compareTo(ServerStatus.DOWN) == 0) 
+                {
+                    System.out.println("Transaction " + transactionID   + " aborted because Site "  + s.getSiteAccessed().getId() + " was down!");
+                    transaction.abort(timeStamp);
+                    clearLocksAndUnblock( transaction);
+                    return;
+                }
+            }
+            System.out.println("Transaction " + transactionID + " commits");
+            commitRequest(transaction, transactionTimestamp);
+            transaction.commit(timeStamp);
+        }
+
+        else {
+            System.out.println("Transaction " + transactionID + " commits");
+            transaction.commit(timeStamp);
+        }
+        clearLocksAndUnblock(transaction);
+    }
+	
+	
+	public void write(int timeStamp,String transactionID, String index, String val )
 	{
-		
-	}public void write(int timeStamp,String transaction, String index, String value )
+		int value = Integer.parseInt(val);
+        Transaction transaction = transMap.get(transactionID);
+        int indexNum = Integer.parseInt(index.substring(1));
+
+        // if index is odd
+        if (indexNum % 2 != 0) 
+        {
+            int siteNum = indexNum % 10;
+            Site site = dm.getSiteList().get(siteNum);
+            if (site.getStatus() == ServerStatus.UP|| site.getStatus() == ServerStatus.RECOVERING) 
+            {
+                // take lock if not then wait or die
+                if (site.isWriteLockAvailable(transaction, index)) 
+                {
+                    site.getWriteLock(transaction, index);
+                    transaction.setTransactionStatus(Status.RUNNING);
+                    AccessedSites siteAccessed = new AccessedSites(site,currentTime);
+                    transaction.addToSitesAccessed(siteAccessed);
+                    transaction.addToUncommitedindexes(index, value);
+                } 
+                else 
+                { 
+                	// lock not available
+                    if (site.transactionAbortsOnWrite(transaction, index)) 
+                    {
+                        transaction.setTransactionStatus(Status.WAITING);
+                        WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
+                        waitingOperations.add(waitOperation);
+
+                    } 
+                    else 
+                    {
+                        transaction.setTransactionStatus(Status.ABORTED);
+                        clearLocksAndUnblock(transaction);
+                    }
+                }
+
+            } 
+            else 
+            { 
+            	// the site is down. It waits
+                transaction.setTransactionStatus(Status.WAITING);
+                WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site, value);
+                waitingOperations.add(waitOperation);
+            }
+        }
+        // index is even
+        else {
+        	
+        	boolean allLocksAcquired = true;
+
+            for (int i = 0; i < 10; i++) 
+            {
+                Site site = dm.getSiteList().get(i);
+                if (site.getStatus() == ServerStatus.UP  || site.getStatus() == ServerStatus.RECOVERING) 
+                {
+                    // if lock can be taken
+                    if (site.isWriteLockAvailable(transaction, index)) 
+                    {
+                        site.getWriteLock(transaction, index);
+                        AccessedSites siteAccessed = new AccessedSites(site,  currentTime);
+                        transaction.addToSitesAccessed(siteAccessed);
+                    } 
+                    else 
+                    { 
+                    	// either the transaction waits or gets aborted
+                        if (site.transactionAbortsOnWrite(transaction, index)) 
+                        {
+                            transaction.setTransactionStatus(Status.WAITING);
+                            WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
+                            waitingOperations.add(waitOperation);
+                            allLocksAcquired = false;
+                        } else {
+                            transaction.setTransactionStatus(Status.ABORTED);
+                           
+                            clearLocksAndUnblock( transaction);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            if (allLocksAcquired) {
+                transaction.addToUncommitedindexes(index, value);
+            }
+        }
+	}
+	public void read(int timeStamp,String transactionID, String index)
 	{
+
+        Transaction transaction = transMap.get(transactionID);
+        int indexNum = Integer.parseInt(index.substring(1));
+
+        if (transaction.getIsReadOnly()) 
+        {
+            readOnlyRequest(transaction, index);
+            return;
+        }
+
+        // if index is odd
+        if (indexNum % 2 != 0) {
+            int siteNum = indexNum % 10;
+            Site site = dm.getSiteList().get(siteNum);
+            if (site.getStatus() == ServerStatus.UP|| site.getStatus() == ServerStatus.RECOVERING) 
+            {
+
+                if (site.isReadLockAvailable(index, transaction)) 
+                {
+                    site.getReadLock(transaction, index);
+                    
+//                    HashMap<String, Integer> uncommit = transaction.getUncommitedindexes();
+//                    if (!uncommit.isEmpty()) {
+//                    	Integer uncommitval = uncommit.get(index);
+//                    	if (uncommitval != null) {
+//                    		int indexval = site.read(index);
+//                    		if(uncommitval == indexval)
+//                    		{    
+//                    			System.out.println(transactionID + " reads " + index + " value: " + indexval);
+//                    		}
+//                    		else {
+//                    			System.out.println(transactionID + " reads " + index + " value: " + uncommitval);
+//                    		}
+//                          }
+//                    }
+//                    else 
+//                    {
+//                    	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+//                    }
+                    System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+                    transaction.setTransactionStatus(Status.RUNNING);
+                    AccessedSites siteAccessed = new AccessedSites(site, currentTime);
+                    transaction.addToSitesAccessed(siteAccessed);
+                } 
+                else 
+                {
+                    if (site.transactionWaits(transaction, index)) 
+                    {
+                        transaction.setTransactionStatus(Status.WAITING);
+                        WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.READ, index);
+                        waitingOperations.add(waitOperation);
+                    } 
+                    else 
+                    {
+                        transaction.setTransactionStatus(Status.ABORTED);
+                        clearLocksAndUnblock(transaction);
+                        return;
+                    }
+                }
+
+            } else 
+            {
+                transaction.setTransactionStatus(Status.WAITING);
+                WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.READ, index);
+                waitingOperations.add(waitOperation);
+
+            }
+        } 
+        else
+        {
+        	// index is even
+            Boolean valueRead = false;
+            for (Site site : dm.getSiteList()) 
+            {
+                if (site.getStatus() == ServerStatus.UP) 
+                {
+                    if (site.isReadLockAvailable(index, transaction)) 
+                    {
+                        site.getReadLock(transaction, index);
+//                        
+//                        HashMap<String, Integer> uncommit = transaction.getUncommitedindexes();
+//                        if (!uncommit.isEmpty()) {
+//                        	Integer uncommitval = uncommit.get(index);
+//                        	if (uncommitval != null) {
+//                        		int indexval = site.read(index);
+//                        		if(uncommitval == indexval)
+//                        		{    
+//                        			System.out.println(transactionID + " reads " + index + " value: " + indexval);
+//                        		}
+//                        		else {
+//                        			System.out.println(transactionID + " reads " + index + " value: " + uncommitval);
+//                        		}
+//                              }
+//                        }
+//                        else 
+//                        {
+//                        	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+//                        }
+                      	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+                        valueRead = true;
+                        AccessedSites siteAccessed = new AccessedSites(site,currentTime);
+                        transaction.addToSitesAccessed(siteAccessed);
+                        break;
+                    }
+                }
+            }
+            if (!valueRead) 
+            {
+            	// either all servers are down or there is a write lock.
+                for (int i = 0; i < 10; i++) {
+                    if (dm.getSiteList().get(i).getStatus() == ServerStatus.UP) 
+                    {
+                        if (!dm.getSiteList().get(i).transactionWaits(transaction, index)) 
+                        {
+                            transaction.setTransactionStatus(Status.ABORTED);
+                            clearLocksAndUnblock(transaction);
+                            return;
+                        }
+                        break;
+                    }
+                }
+                WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.READ, index);
+                waitingOperations.add(waitOperation);
+            }
+
+        }
 		
 	}
-	public void read(int timeStamp,String transaction, String index)
-	{
-		
-	}
+	
+	 /**
+     * handles requests for ReadOnly transactions
+     * 
+     * @param transaction
+     *            - The Transaction that is making the read request
+     * @param var
+     *            - The variable that we are reading
+     */
+    private void readOnlyRequest(Transaction transaction, String var) 
+    {
+        HashMap<String, Integer> snapshot = transaction.getPresentStateRO();
+        if (snapshot.containsKey(var)) 
+        {
+            System.out.println(transaction.getID() + " reads " + var+ " value: " + snapshot.get(var));
+        } 
+        else 
+        {
+            // value was not present at the time of snapshot get value now
+            int varNum = Integer.parseInt(var.substring(1));
+            int siteNum = varNum % 10;
+            Site site = dm.getSiteList().get(siteNum);
+            if (site.getStatus() == ServerStatus.UP) 
+            {
+                System.out.println(transaction.getID() + " reads " + var + " value: " + site.read(var));
+            } 
+            else if ((site.getStatus() == ServerStatus.RECOVERING)  && site.isReadLockAvailable(var, transaction)) 
+            {
+                System.out.println(transaction.getID() + " reads " + var + " value: " + site.read(var));
+            } 
+            else 
+            {
+            	// create wait operation
+                WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.READ, var);
+                waitingOperations.add(waitOperation);
+            }
+        }
+    }
 
 	public void dump()
 	{
@@ -76,6 +378,9 @@ public class TransactionManager {
 		
 	}
 	
+	
+	
+	
 	public DataManager getDM()
 	{
 		return dm;
@@ -83,14 +388,14 @@ public class TransactionManager {
 	
 	public void counter()
 	{
-		count++;
+		currentTime++;
 	}
 	
 	HashMap<String, Integer> presentProgState()
 	{
 		 HashMap<String, Integer> presentStateMap = new HashMap<String, Integer>();
 
-	        // adding even variables
+	        // adding even indexs
 	        for (int i = 0; i < totalSites; i = i + 2) 
 	        {
 	            if (dm.getSiteList().get(i).getStatus() == ServerStatus.UP) 
@@ -103,7 +408,7 @@ public class TransactionManager {
 	            }
 
 	        }
-	        // adding odd variables
+	        // adding odd indexs
 	        for (int i = 1; i < 10; i = i + 2) 
 	        {
 	            if (dm.getSiteList().get(i).getStatus() == ServerStatus.UP) 
@@ -115,4 +420,160 @@ public class TransactionManager {
 	        }
 	        return presentStateMap;
 	}
+	
+	/**
+     * Clears the locks held by the transaction and unblocks waiting operations
+     * 
+     * @param timeStamp - the time moment that the Transaction comes to this method
+     * @param transaction  - The transaction that we need to clear from the sites lock table
+     * 
+     */
+    public void clearLocksAndUnblock(Transaction transaction) 
+    {
+        transMap.remove(transaction.getID());
+        for (Site s : dm.getSiteList()) 
+        {
+            Map<String, ArrayList<Lock>> siteLockTable = s.getLockTable();
+            ArrayList<String> auxSiteLockTable = new ArrayList<String>();
+            for (String index : siteLockTable.keySet()) 
+            {
+                ArrayList<Lock> lockArrayList = siteLockTable.get(index);
+                ArrayList<Lock> auxLockList = new ArrayList<Lock>();
+                for (Lock lock : lockArrayList) 
+                {
+                    if (lock.getTransaction().equals(transaction)) 
+                    {
+                       auxLockList.add(lock);
+                    }
+                }
+                for (Lock lock : auxLockList) 
+                {
+                    siteLockTable.get(index).remove(lock);
+                }
+
+                if (siteLockTable.get(index).size() == 0) 
+                {
+                    auxSiteLockTable.add(index);
+                }
+            }
+
+            for (String index : auxSiteLockTable) 
+            {
+                siteLockTable.remove(index);
+            }
+        }
+
+        checkWaitingOperations();
+    }
+
+    /**
+     * Checks if waiting operations can be started
+     * 
+     */
+    public void checkWaitingOperations() 
+    {
+        int count = waitingOperations.size();
+
+        List<WaitOperation> auxOperations = new ArrayList<WaitOperation>();
+
+        for (int i = 0; i < waitingOperations.size(); i++) 
+        {
+            auxOperations.add(waitingOperations.get(i));
+        }
+
+        for (int i = 0; i < count; i++) 
+        {
+            WaitOperation waitTask = auxOperations.get(i);
+            waitingOperations.remove(waitTask);
+
+            if (!transMap.containsValue(waitTask.getWaitingTransaction())) 
+            {
+                continue;
+            }
+            
+            if (waitTask.getWaitOperation() == OPERATION.READ) 
+            {
+                read(waitTask.getWaitingTransaction().getTimeStamp(), waitTask.getWaitingTransaction().getID(), waitTask.getindex());
+            } 
+            else 
+            {
+                // check if write lock is available on the site:
+                Site site = waitTask.getWaitSite();
+                Transaction transaction = waitTask.getWaitingTransaction();
+                String index = waitTask.getindex();
+                if (site.getStatus() == ServerStatus.UP || site.getStatus() == ServerStatus.RECOVERING) 
+                {
+                    // take lock if not then wait or die
+
+                    if (site.isWriteLockAvailable(transaction, index)) 
+                    {
+                        site.getWriteLock(transaction, index);
+                        AccessedSites siteAccessed = new AccessedSites(site, currentTime);
+                        transaction.addToSitesAccessed(siteAccessed);
+
+                        // check if transaction is waiting for more locks
+
+//                        for (int j = i; j < count; j++) 
+//                        {
+//                            if (auxOperations.get(j).getWaitingTransaction() == transaction) 
+//                            {
+//                            }
+//                        }
+
+                        transaction.addToUncommitedindexes(index, waitTask.getValue());
+                    }
+
+                    else 
+                    { 
+                    	// lock not available
+                        if (site.transactionWaits(transaction, index)) 
+                        {
+                            transaction.setTransactionStatus(Status.WAITING);
+                            WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site, waitTask.getValue());
+                            waitingOperations.add(waitOperation);
+
+                        }
+                        else 
+                        {
+                            transaction.setTransactionStatus(Status.ABORTED);
+                            clearLocksAndUnblock(transaction);
+                        }
+
+                    }
+                } else {
+                    transaction.setTransactionStatus(Status.ABORTED);
+                    System.out.println("Transaction "  + transaction.getID() + " Aborted because it was waiting for a lock but site "+ site + "failed");
+                    clearLocksAndUnblock(transaction);
+                }
+            }
+
+        }
+    }
+
+    /**
+     * transaction makes a commit request
+     * 
+     * @param transaction   - The transaction that is trying to commit
+     * @param timeStamp  - the timestamp of the commit request
+
+     */
+    public void commitRequest(Transaction transaction, int timeStamp) {
+        
+        HashMap<String, Integer> uncommitted = transaction.getUncommitedindexes();
+        for (String index : uncommitted.keySet()) 
+        {
+            for (Site s : dm.getSiteList()) 
+            {
+                if (s.doesIndexExistOnSite(index)) 
+                {
+                    if ((s.getStatus().compareTo(ServerStatus.UP) == 0 || s.getStatus().compareTo(ServerStatus.RECOVERING) == 0) && s.isWriteLockTaken(transaction, index)) 
+                    {
+                        s.write(index, uncommitted.get(index));
+                    }
+                }
+            }
+        }
+
+        transaction.getUncommitedindexes().clear();
+    }
 }

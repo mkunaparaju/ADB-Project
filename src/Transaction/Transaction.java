@@ -85,12 +85,12 @@ public class Transaction {
 	    /**
 	     * Used to keep track of the indexes that are changed but uncommitted.
 	     * 
-	     * @param var - the variable that was changed by the transaction
+	     * @param index - the index that was changed by the transaction
 	     * @param value  - the value that we are writing to the variable before the commit
 	     * 
 	     */
-	    public void addToUncommitedindexes(String var, int value) {
-	        this.uncommittedindexes.put(var, value);
+	    public void addToUncommitedindexes(String index, int value) {
+	        this.uncommittedindexes.put(index, value);
 	    }
 
 	    public HashMap<String, Integer> getUncommitedindexes() {
@@ -115,4 +115,6 @@ public class Transaction {
 	    public void abort(int timestamp) {
 	        this.transactionStatus = Status.ABORTED;
 	    }
+
+		
 }
