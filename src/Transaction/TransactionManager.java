@@ -132,7 +132,7 @@ public class TransactionManager {
                 else 
                 { 
                 	// lock not available
-                    if (site.transactionAbortsOnWrite(transaction, index)) 
+                    if (site.transactionAbortsOnWrite(transaction, index, waitingOperations)) 
                     {
                         transaction.setTransactionStatus(Status.WAITING);
                         WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
@@ -175,7 +175,7 @@ public class TransactionManager {
                     else 
                     { 
                     	// either the transaction waits or gets aborted
-                        if (site.transactionAbortsOnWrite(transaction, index)) 
+                        if (site.transactionWaits(transaction, index)) 
                         {
                             transaction.setTransactionStatus(Status.WAITING);
                             WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
@@ -217,29 +217,12 @@ public class TransactionManager {
 
                 if (site.isReadLockAvailable(index, transaction)) 
                 {
-                    site.getReadLock(transaction, index);
-                    
-//                    HashMap<String, Integer> uncommit = transaction.getUncommitedindexes();
-//                    if (!uncommit.isEmpty()) {
-//                    	Integer uncommitval = uncommit.get(index);
-//                    	if (uncommitval != null) {
-//                    		int indexval = site.read(index);
-//                    		if(uncommitval == indexval)
-//                    		{    
-//                    			System.out.println(transactionID + " reads " + index + " value: " + indexval);
-//                    		}
-//                    		else {
-//                    			System.out.println(transactionID + " reads " + index + " value: " + uncommitval);
-//                    		}
-//                          }
-//                    }
-//                    else 
-//                    {
-//                    	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
-//                    }
-                    System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+                	site.getReadLock(transaction, index);
+                    System.out.println(transactionID + " reads " + index
+                            + " value: " + site.read(index));
                     transaction.setTransactionStatus(Status.RUNNING);
-                    AccessedSites siteAccessed = new AccessedSites(site, currentTime);
+                    AccessedSites siteAccessed = new AccessedSites(site,
+                            currentTime);
                     transaction.addToSitesAccessed(siteAccessed);
                 } 
                 else 
@@ -276,29 +259,12 @@ public class TransactionManager {
                 {
                     if (site.isReadLockAvailable(index, transaction)) 
                     {
-                        site.getReadLock(transaction, index);
-//                        
-//                        HashMap<String, Integer> uncommit = transaction.getUncommitedindexes();
-//                        if (!uncommit.isEmpty()) {
-//                        	Integer uncommitval = uncommit.get(index);
-//                        	if (uncommitval != null) {
-//                        		int indexval = site.read(index);
-//                        		if(uncommitval == indexval)
-//                        		{    
-//                        			System.out.println(transactionID + " reads " + index + " value: " + indexval);
-//                        		}
-//                        		else {
-//                        			System.out.println(transactionID + " reads " + index + " value: " + uncommitval);
-//                        		}
-//                              }
-//                        }
-//                        else 
-//                        {
-//                        	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
-//                        }
-                      	System.out.println(transactionID + " reads " + index + " value: " + site.read(index));
+                    	site.getReadLock(transaction, index);
+                        System.out.println(transactionID + " reads " + index
+                                + " value: " + site.read(index));
                         valueRead = true;
-                        AccessedSites siteAccessed = new AccessedSites(site,currentTime);
+                        AccessedSites siteAccessed = new AccessedSites(site,
+                                currentTime);
                         transaction.addToSitesAccessed(siteAccessed);
                         break;
                     }

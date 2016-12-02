@@ -3,11 +3,13 @@ package Storage;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 
 import Storage.Lock;
 import Storage.Lock.LockType;
 import Transaction.TransactionManager;
 import Transaction.Transaction;
+import Transaction.WaitOperation;
 
 public class Site {
 	 public enum ServerStatus 
@@ -226,18 +228,45 @@ public class Site {
 	     * @return -true or false
 	     * 
 	     */
-	    public boolean transactionAbortsOnWrite(Transaction transaction, String index) {
+	    public boolean transactionAbortsOnWrite(Transaction transaction, String index, List<WaitOperation> waitingOperations) {
 	        if (!(this.status == ServerStatus.DOWN)) {
 	            ArrayList<Lock> locks = lockTable.get(index);
 	            Transaction transHoldingLock = locks.get(0).getTransaction();
-	            if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) {
-	                System.out.println("Transaction " + transaction.getID()
-	                        + " aborts because " + transHoldingLock.getID()
-	                        + " has  lock on " + index);
-	                return false;
-	            }
+            	
+	            if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) 
+            	{
+            		System.out.println("Transaction " + transaction.getID() + " aborts because " + transHoldingLock.getID()
+                       + " has  lock on " + index);
+
+    	            return false;
+            	}
+	            //	            if(detectCycle(transHoldingLock, transaction, waitingOperations, index ))
+//	            {
+//	            	if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) 
+//	            	{
+//	            		System.out.println("Transaction " + transaction.getID() + " aborts because " + transHoldingLock.getID()
+//	                        + " has  lock on " + index);
+//	            	}
+//	            	else
+//	            	{
+//
+//	            		System.out.println("Transaction " + transHoldingLock.getID() + " aborts because " + transaction.getID()
+//	                        + " has  lock on " + index);
+//	            	}
+//	            	return false;
+//	            }
 	        }
 	        return true;
+	    }
+	    
+	    boolean detectCycle(Transaction thl, Transaction twl, List<WaitOperation> waitingOperations, String index)
+	    {
+	    	Boolean isCycle = false; 
+	    	for(WaitOperation wo : waitingOperations)
+	    	{
+	    		isCycle = wo.isEquals(thl, index);
+	    	}
+	    	return isCycle;
 	    }
 
 	    /**

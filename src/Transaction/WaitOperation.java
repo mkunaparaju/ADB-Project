@@ -1,7 +1,10 @@
+
+
 /**
  * 
  */
 package Transaction;
+import Storage.Index;
 import Storage.Site;
 
 /**
@@ -53,4 +56,10 @@ public class WaitOperation {
 	    public int getValue() {
 	        return value;
 	    }
+	    public boolean isEquals(Transaction tns, String inInd)
+	    {
+	    	return (tns.getID().equals(waitingTransaction.getID())  && inInd.equals(index));
+	    }
+
 }
+
