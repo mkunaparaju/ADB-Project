@@ -36,7 +36,7 @@ class InitExec {
 	        String nextLine = br.readLine();
 	        int timestamp = 1;
 	        TransactionManager tm = new TransactionManager();
-            
+	        System.out.println("------------------TESTCASE-------------------");
 	        while (nextLine != null) {
                 // System.out.println(nextLine);
             
@@ -48,7 +48,7 @@ class InitExec {
                 }
 
                 String[] operations = nextLine.split(";");
-
+                
                 for (String s: operations) {
 
                     String singleOper = s.trim();
