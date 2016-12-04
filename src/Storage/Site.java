@@ -244,10 +244,21 @@ public class Site {
 	            	//System.out.println("-----" + transHoldingLock.getID() + " --------- "+ wo.getWaitingTransaction().getID());
 	            	if(transHoldingLock.getID() == wo.getWaitingTransaction().getID())
 	            	{
-	            		System.out.println("Transaction " + transaction.getID()
-		                        + " aborts because " + transHoldingLock.getID()
-		                        + " has  lock on " + index);
-	            		return true;
+	            		String indexwo = wo.getindex();
+	            		//System.out.println("index locked on " + indexwo);
+	            		ArrayList<Lock> lockwo = lockTable.get(indexwo);
+	      
+	            		String Transactionhlwo = lockwo.get(0).getTransaction().getID();
+	            		//System.out.println("transaction locks   " + Transactionhlwo) ;
+	            		if(Transactionhlwo == transaction.getID())
+	            		{
+
+		            		System.out.println("Transaction " + transaction.getID()
+			                        + " aborts because " + transHoldingLock.getID()
+			                        + " has  lock on " + index);
+		            		return true;
+	            		}
+	            		
 	            	}
 	            }
 	            
