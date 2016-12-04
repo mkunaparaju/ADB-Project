@@ -132,7 +132,7 @@ public class TransactionManager {
                 else 
                 { 
                 	// lock not available
-                    if (site.transactionAbortsOnWrite(transaction, index, waitingOperations)) 
+                    if (site.transactionWaits(transaction, index, waitingOperations)) 
                     {
                         transaction.setTransactionStatus(Status.WAITING);
                         WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
@@ -175,7 +175,7 @@ public class TransactionManager {
                     else 
                     { 
                     	// either the transaction waits or gets aborted
-                        if (site.transactionWaits(transaction, index)) 
+                        if (site.transactionWaits(transaction, index, waitingOperations)) 
                         {
                             transaction.setTransactionStatus(Status.WAITING);
                             WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site,value);
@@ -227,7 +227,7 @@ public class TransactionManager {
                 } 
                 else 
                 {
-                    if (site.transactionWaits(transaction, index)) 
+                    if (site.transactionWaits(transaction, index, waitingOperations)) 
                     {
                         transaction.setTransactionStatus(Status.WAITING);
                         WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.READ, index);
@@ -276,7 +276,7 @@ public class TransactionManager {
                 for (int i = 0; i < 10; i++) {
                     if (dm.getSiteList().get(i).getStatus() == ServerStatus.UP) 
                     {
-                        if (!dm.getSiteList().get(i).transactionWaits(transaction, index)) 
+                        if (!dm.getSiteList().get(i).transactionWaits(transaction, index, waitingOperations)) 
                         {
                             transaction.setTransactionStatus(Status.ABORTED);
                             clearLocksAndUnblock(transaction);
@@ -535,7 +535,7 @@ public class TransactionManager {
                     else 
                     { 
                     	// lock not available
-                        if (site.transactionWaits(transaction, index)) 
+                        if (site.transactionWaits(transaction, index, waitingOperations)) 
                         {
                             transaction.setTransactionStatus(Status.WAITING);
                             WaitOperation waitOperation = new WaitOperation(transaction, OPERATION.WRITE, index, site, waitTask.getValue());

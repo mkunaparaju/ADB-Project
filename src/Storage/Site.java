@@ -207,18 +207,25 @@ public class Site {
 	     * @return -true or false
 	     *  
 	     */
-	    public boolean transactionWaits(Transaction transaction, String index) {
-	        if (!(this.status == ServerStatus.DOWN)) {
+	    public boolean transactionWaits(Transaction transaction, String index, List<WaitOperation> waitingOperations) {
+	    	boolean waits = true;
+	    	if (!(this.status == ServerStatus.DOWN)) {
 	            ArrayList<Lock> locks = lockTable.get(index);
 	            Transaction transHoldingLock = locks.get(0).getTransaction();
-	            if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) {
-	                System.out.println("Transaction " + transaction.getID()
-	                        + " waits " + transHoldingLock.getID()
+	            
+	            if(transactionAbortsOnWrite(transaction, index, waitingOperations ))
+	            {
+	            	waits = false;
+	            }
+	            else
+	            {
+	            	System.out.println("Transaction " + transaction.getID()
+	                        + " waits because " + transHoldingLock.getID()
 	                        + " has  lock on " + index);
-	              //  return false;
+	            	waits = true;
 	            }
 	        }
-	        return true;
+	        return waits;
 	    }
 	    /**
 	     * checks if a transaction should wait for the other transaction to finish or it should abort
@@ -232,31 +239,20 @@ public class Site {
 	        if (!(this.status == ServerStatus.DOWN)) {
 	            ArrayList<Lock> locks = lockTable.get(index);
 	            Transaction transHoldingLock = locks.get(0).getTransaction();
-            	
-	            if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) 
-            	{
-            		System.out.println("Transaction " + transaction.getID() + " aborts because " + transHoldingLock.getID()
-                       + " has  lock on " + index);
-
-    	            return false;
-            	}
-	            //	            if(detectCycle(transHoldingLock, transaction, waitingOperations, index ))
-//	            {
-//	            	if (transHoldingLock.getTimeStamp() < transaction.getTimeStamp()) 
-//	            	{
-//	            		System.out.println("Transaction " + transaction.getID() + " aborts because " + transHoldingLock.getID()
-//	                        + " has  lock on " + index);
-//	            	}
-//	            	else
-//	            	{
-//
-//	            		System.out.println("Transaction " + transHoldingLock.getID() + " aborts because " + transaction.getID()
-//	                        + " has  lock on " + index);
-//	            	}
-//	            	return false;
-//	            }
+	            for(WaitOperation wo : waitingOperations)
+	            {
+	            	//System.out.println("-----" + transHoldingLock.getID() + " --------- "+ wo.getWaitingTransaction().getID());
+	            	if(transHoldingLock.getID() == wo.getWaitingTransaction().getID())
+	            	{
+	            		System.out.println("Transaction " + transaction.getID()
+		                        + " aborts because " + transHoldingLock.getID()
+		                        + " has  lock on " + index);
+	            		return true;
+	            	}
+	            }
+	            
 	        }
-	        return true;
+	        return false;
 	    }
 	    
 	    boolean detectCycle(Transaction thl, Transaction twl, List<WaitOperation> waitingOperations, String index)
